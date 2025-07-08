@@ -237,6 +237,11 @@
         targetScaleFactor = calculateScaleFactor();
         animateScale();
         updateTimestamp(true);
+        console.log("✅ Cloud data received:", data);
+        console.log("Array.isArray(data):", Array.isArray(data));
+        console.log("data.length:", data.length);
+        console.log("Each item valid:", data.every(p => typeof p.cloud === 'number' && !isNaN(p.cloud)));
+
       } catch (err) {
         console.error('❌ Failed to fetch cloud data:', err);
         updateTimestamp(false);
