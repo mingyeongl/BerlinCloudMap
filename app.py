@@ -5,11 +5,14 @@ import os
 
 app = Flask(__name__)
 
+# 🔒 캐시와 락
 cache = {
     'data': [],
     'timestamp': 0
 }
+cache_lock = threading.Lock()
 
+# ☁️ 데이터 수집 함수
 def fetch_and_cache_cloud_data():
     import requests
 
@@ -26,7 +29,7 @@ def fetch_and_cache_cloud_data():
                     'lon': float(lon_str)
                 })
     except Exception as e:
-        print(f"Error reading points.txt: {e}")
+        print(f"❌ Error reading points.txt: {e}")
         return []
 
     results = []
@@ -46,7 +49,7 @@ def fetch_and_cache_cloud_data():
                 'cloud': cloud if isinstance(cloud, (int, float)) else 0
             })
         except Exception as e:
-            print(f"Error fetching cloud for {lat},{lon}: {e}")
+            print(f"❌ Error fetching cloud for {lat},{lon}: {e}")
             results.append({
                 'lat': lat,
                 'lon': lon,
@@ -55,10 +58,12 @@ def fetch_and_cache_cloud_data():
 
     return results
 
+# 🔁 캐시 주기적 갱신
 def refresh_cache():
     while True:
-        print("Refreshing cloud data cache...")
+        print("🔁 Refreshing cloud data cache...")
         data = fetch_and_cache_cloud_data()
+
         base_lat = 52.48
         base_lon = 13.35
         scale_x = 15
@@ -71,25 +76,33 @@ def refresh_cache():
             x = (p['lon'] - base_lon) * lon_km * scale_x
             y = (p['lat'] - base_lat) * lat_km * scale_y
             processed.append({'x': x, 'y': y, 'cloud': p['cloud']})
-        
-        cache['data'] = processed
-        cache['timestamp'] = time.time()
-        print("✅ Cache updated:", cache)
-        time.sleep(1800)  # 30분 간격
 
+        with cache_lock:
+            cache['data'] = processed
+            cache['timestamp'] = time.time()
+            print(f"✅ Cache updated with {len(processed)} items")
+
+        time.sleep(1800)  # 30분마다 갱신
+
+# 📦 API 엔드포인트
 @app.route('/api/cloud-data')
 def cloud_data():
-    return jsonify(cache['data'])
+    with cache_lock:
+        return jsonify(cache['data'])
 
+# 🔤 폰트 서빙
 @app.route('/fonts/<path:filename>')
 def serve_fonts(filename):
     return send_from_directory(os.path.join(app.root_path, 'fonts'), filename)
 
+# 📄 메인 페이지
 @app.route('/')
 def index():
     return send_from_directory('.', 'index.html')
 
+# ⏱️ 캐시 스레드 시작
 threading.Thread(target=refresh_cache, daemon=True).start()
 
+# 🚀 앱 실행
 if __name__ == '__main__':
     app.run(debug=True)
