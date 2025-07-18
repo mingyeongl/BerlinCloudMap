@@ -1,108 +1,44 @@
-import time
-from flask import Flask, jsonify, send_from_directory
-import threading
 import os
+import threading
+import time
+from flask import Flask, jsonify, send_from_directory, render_template
+import csv
+import requests
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", template_folder="templates")
 
-# 🔒 캐시와 락
-cache = {
-    'data': [],
-    'timestamp': 0
-}
-cache_lock = threading.Lock()
+CLOUD_DATA_URL = "https://your-cloud-url/points.txt"  # 필요시 수정
+CACHE = {"data": [], "timestamp": 0}
+CACHE_TTL = 60  # 초
 
-# ☁️ 데이터 수집 함수
 def fetch_and_cache_cloud_data():
-    import requests
-
-    points = []
     try:
-        with open('points.txt', 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                lat_str, lon_str = line.split(',')
-                points.append({
-                    'lat': float(lat_str),
-                    'lon': float(lon_str)
-                })
+        response = requests.get(CLOUD_DATA_URL)
+        response.raise_for_status()
+        content = response.text.strip().splitlines()
+        reader = csv.reader(content, delimiter=',')
+        data = [{"x": float(x), "y": float(y), "z": float(z)} for x, y, z in reader]
+        CACHE["data"] = data
+        CACHE["timestamp"] = time.time()
+        print("✅ Cache updated:", CACHE)
     except Exception as e:
-        print(f"❌ Error reading points.txt: {e}")
-        return []
+        print("⚠️ Error fetching cloud data:", e)
 
-    results = []
+@app.route("/api/points")
+def get_points():
+    if time.time() - CACHE["timestamp"] > CACHE_TTL:
+        fetch_and_cache_cloud_data()
+    return jsonify(CACHE["data"])
 
-    for point in points:
-        lat = point['lat']
-        lon = point['lon']
-        try:
-            url = f'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=cloud_cover&timezone=Europe/Berlin'
-            r = requests.get(url)
-            r.raise_for_status()
-            data = r.json()
-            cloud = data.get('current', {}).get('cloud_cover', 0)
-            results.append({
-                'lat': lat,
-                'lon': lon,
-                'cloud': cloud if isinstance(cloud, (int, float)) else 0
-            })
-        except Exception as e:
-            print(f"❌ Error fetching cloud for {lat},{lon}: {e}")
-            results.append({
-                'lat': lat,
-                'lon': lon,
-                'cloud': 0
-            })
-
-    return results
-
-# 🔁 캐시 주기적 갱신
-def refresh_cache():
-    while True:
-        print("🔁 Refreshing cloud data cache...")
-        data = fetch_and_cache_cloud_data()
-
-        base_lat = 52.48
-        base_lon = 13.35
-        scale_x = 15
-        scale_y = 15
-        lon_km = 111 * (abs(base_lat) / 90)
-        lat_km = 111
-
-        processed = []
-        for p in data:
-            x = (p['lon'] - base_lon) * lon_km * scale_x
-            y = (p['lat'] - base_lat) * lat_km * scale_y
-            processed.append({'x': x, 'y': y, 'cloud': p['cloud']})
-
-        with cache_lock:
-            cache['data'] = processed
-            cache['timestamp'] = time.time()
-            print(f"✅ Cache updated with {len(processed)} items")
-
-        time.sleep(1800)  # 30분마다 갱신
-
-# 📦 API 엔드포인트
-@app.route('/api/cloud-data')
-def cloud_data():
-    with cache_lock:
-        return jsonify(cache['data'])
-
-# 🔤 폰트 서빙
-@app.route('/fonts/<path:filename>')
-def serve_fonts(filename):
-    return send_from_directory(os.path.join(app.root_path, 'fonts'), filename)
-
-# 📄 메인 페이지
-@app.route('/')
+@app.route("/")
 def index():
-    return send_from_directory('.', 'index.html')
+    return render_template("index.html")
 
-# ⏱️ 캐시 스레드 시작
-threading.Thread(target=refresh_cache, daemon=True).start()
+@app.route("/fonts/<path:filename>")
+def serve_fonts(filename):
+    return send_from_directory(os.path.join(app.static_folder, "fonts"), filename)
 
-# 🚀 앱 실행
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    fetch_and_cache_cloud_data()
+    app.run(host="0.0.0.0", port=port)
