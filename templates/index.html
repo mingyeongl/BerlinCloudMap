@@ -8,20 +8,16 @@
     @font-face {
       font-family: 'Telidon-Ink';
       src: url('fonts/Telidon-Ink.ttf') format('truetype');
-      font-weight: normal;
-      font-style: normal;
     }
     @font-face {
       font-family: 'Telidon-Ink';
       src: url('fonts/Telidon-Ink-Italic.ttf') format('truetype');
-      font-weight: normal;
       font-style: italic;
     }
     @font-face {
       font-family: 'Telidon-Ink';
       src: url('fonts/Telidon-Ink-Bold.ttf') format('truetype');
       font-weight: bold;
-      font-style: normal;
     }
     @font-face {
       font-family: 'Telidon-Ink';
@@ -43,7 +39,6 @@
       flex-direction: column;
       align-items: center;
       padding: 20px 50px;
-      box-sizing: border-box;
     }
 
     canvas {
@@ -89,7 +84,7 @@
 <body>
   <div id="container">
     <h1>Berlin Cloud Map</h1>
-    <div id="info">Updated every 30 minutes</div>
+    <div id="info">Updated manually</div>
     <div id="timestamp">Loading...</div>
     <canvas id="canvas"></canvas>
     <div id="credit">Made by Mingyeong Becca Lee</div>
@@ -169,7 +164,7 @@
 
       data.forEach(point => {
         const x = point.x * scaleFactor + offsetX;
-        const y = canvas.height - (point.y * scaleFactor + offsetY); // y축 반전
+        const y = canvas.height - (point.y * scaleFactor + offsetY);
 
         const baseRadius = mapRange(point.cloud, 0, 100, 1, 20);
         const distance = cursorX !== null ? getDistance(x, y, cursorX, cursorY) : Infinity;
@@ -212,13 +207,13 @@
         });
         timestampElem.textContent = `Last updated: ${formatted}`;
       } else {
-        timestampElem.textContent = '❌ Failed to fetch cloud data';
+        timestampElem.textContent = '❌ Failed to load data';
       }
     }
 
     async function fetchCloudData() {
       try {
-        const response = await fetch('/api/cloud-data');
+        const response = await fetch('cloud-data.json');
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
         const data = await response.json();
@@ -226,7 +221,6 @@
         const isValid = Array.isArray(data) &&
           data.length > 0 &&
           data.every(p => typeof p.cloud === 'number' && !isNaN(p.cloud));
-        const allZero = isValid && data.every(p => p.cloud === 0);
 
         if (!isValid) throw new Error('Invalid cloud data');
 
